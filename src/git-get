@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+
+set -euo pipefail  # Exit on error, undefined vars, and pipeline failures
+
+VERSION="1.0.0"
+
+show_usage() {
+    cat << EOF
+Usage: git get [OPTIONS] <repository>
+
+Clone or update a repository into a standardized directory structure.
+
+Options:
+    -h, --help      Show this help message
+    --version       Show version information
+    -p, --path      Specify base path (overrides GIT_GET_PATH)
+
+Environment:
+    GIT_GET_PATH    Base path for repositories (default: ~/src)
+
+Arguments:
+    repository      Repository URL or shorthand (user/repo)
+
+Examples:
+    git get git@github.com:user/repo.git
+    git get https://github.com/user/repo
+    git get user/repo
+    git get --path /custom/path user/repo
+    GIT_GET_PATH=/custom/path git get user/repo
+
+Directory structure:
+    [base_path]/[host]/[vendor]/[project]
+EOF
+}
+
+show_version() {
+    echo "git get version $VERSION"
+}
+
+# New function to validate arguments
+validate_args() {
+    if [ $# -ne 1 ]; then
+        echo "fatal: You must specify a repository to install" >&2
+        echo
+        show_usage
+        return 1
+    fi
+    return 0
+}
+
+# New function to get base path
+get_base_path() {
+    local cmd_path="$1"
+    local env_path="${GIT_GET_PATH:-}"
+    local default_path="$HOME/src"
+
+    if [ -n "$cmd_path" ]; then
+        echo "$cmd_path"
+    elif [ -n "$env_path" ]; then
+        echo "$env_path"
+    else
+        echo "$default_path"
+    fi
+}
+
+parse_repository() {
+    local repository=$1
+    local default_scm="github.com"
+
+    if [[ $repository =~ ^git@(.+):(.+)/(.+)\.git$ ]]; then
+        scm="${BASH_REMATCH[1]}"
+        vendor="${BASH_REMATCH[2]}"
+        project="${BASH_REMATCH[3]}"
+    elif [[ $repository =~ ^https?://(.+)/(.+)/(.+)$ ]]; then
+        scm="${BASH_REMATCH[1]}"
+        vendor="${BASH_REMATCH[2]}"
+        project="${BASH_REMATCH[3]}"
+    elif [[ $repository =~ ^(.+)/(.+)$ ]]; then
+        scm="$default_scm"
+        vendor="${BASH_REMATCH[1]}"
+        project="${BASH_REMATCH[2]}"
+        repository="git@${scm}:${vendor}/${project}.git"
+    else
+        echo "fatal: unable to process $repository" >&2
+        return 1
+    fi
+
+    echo "$scm" "$vendor" "$project" "$repository"
+    return 0
+}
+
+# New function to handle repository operations
+handle_repository() {
+    local target_dir="$1"
+    local repository="$2"
+
+    if [ -d "$target_dir" ]; then
+        echo "Updating existing repository..."
+        if ! cd "${target_dir}" && git pull; then
+            echo "Error updating repository" >&2
+            return 1
+        fi
+    else
+        echo "Cloning new repository..."
+        local parent_dir
+        parent_dir=$(dirname "$target_dir")
+        if ! mkdir -p "$parent_dir" && cd "$parent_dir" && git clone "$repository"; then
+            echo "Error cloning repository" >&2
+            return 1
+        fi
+    fi
+
+    echo "Successfully processed repository at ${target_dir}"
+    return 0
+}
+
+main() {
+    local base_path="${GIT_GET_PATH:-$HOME/src}"
+    local cmd_path=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --version)
+                show_version
+                exit 0
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            -p|--path)
+                if [ -z "${2:-}" ]; then
+                    echo "fatal: --path requires a directory argument" >&2
+                    exit 1
+                fi
+                cmd_path="$2"
+                shift 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    if ! validate_args "$@"; then
+        exit 1
+    fi
+
+    local repository=$1
+    base_path=$(get_base_path "$cmd_path")
+
+    local scm vendor project final_repo
+    read -r scm vendor project final_repo <<< "$(parse_repository "$repository")" || exit 1
+    
+    local target_dir="${base_path}/${scm}/${vendor}/${project}"
+    handle_repository "$target_dir" "$final_repo" || exit 1
+}
+
+# Only run main if the script is being executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

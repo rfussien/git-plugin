@@ -1,0 +1,79 @@
+#!/bin/bash
+
+set -euo pipefail  # Exit on error, undefined vars, and pipeline failures
+
+VERSION="1.0.0"
+
+show_usage() {
+    cat << EOF
+Usage: git autocommit [OPTIONS] [COMMIT_TYPE]
+
+Automatically create a git commit with a formatted message based on the branch name.
+Default commit type is "feat" if not specified.
+
+Options:
+    -h, --help      Show this help message
+    --version       Show version information
+
+Arguments:
+    COMMIT_TYPE     The type of commit (e.g., feat, fix, docs, style, refactor, test, chore)
+
+Examples:
+    git autocommit             # Creates commit with "feat: #branch name"
+    git autocommit fix         # Creates commit with "fix: #branch name"
+    git autocommit docs        # Creates commit with "docs: #branch name"
+
+Note: Branch name will have hyphens replaced with spaces in the commit message.
+EOF
+}
+
+show_version() {
+    echo "git autocommit version $VERSION"
+}
+
+main() {
+    if [ "${1:-}" = "--version" ]; then
+        show_version
+        exit 0
+    fi
+
+    if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+        show_usage
+        exit 0
+    fi
+
+    local commit_type="${1:-feat}"
+
+    if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        echo "fatal: not a git repository" >&2
+        exit 1
+    fi
+
+    if [[ -z "$(git status --porcelain)" ]]; then
+        echo "nothing to commit, working tree clean"
+        exit 0
+    fi
+
+    local branch_name
+    branch_name=$(git branch --show-current | sed 's/-/ /g')
+
+    local current_branch
+    current_branch=$(git branch --show-current)
+    if [[ "$current_branch" == "main" ]] || [[ "$current_branch" == "master" ]]; then
+        echo "Warning: You are on $current_branch branch. Are you sure you want to commit? (y/N)"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "Commit cancelled"
+            exit 0
+        fi
+    fi
+
+    git add .
+
+    local commit_message="$commit_type: #$branch_name"
+    git commit -m "$commit_message"
+
+    echo "Successfully committed changes with message: $commit_message"
+}
+
+main "$@"

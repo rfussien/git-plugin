@@ -1,0 +1,49 @@
+name: Tests
+
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install shellcheck
+      run: sudo apt-get install -y shellcheck
+
+    - name: Lint shell scripts
+      run: |
+        shellcheck src/git-get
+        shellcheck src/git-autocommit
+        shellcheck src/git-branch-cleanup
+
+    - name: Make test files executable
+      run: |
+        chmod +x test/git-get.test.sh
+        chmod +x test/git-autocommit.test.sh
+        chmod +x test/git-branch-cleanup.test.sh
+
+    - name: Run unit tests
+      run: |
+        ./test/git-get.test.sh
+        ./test/git-autocommit.test.sh
+        ./test/git-branch-cleanup.test.sh
+
+    - name: Test git-get
+      run: |
+        chmod +x src/git-get
+        ./src/git-get --version
+        ./src/git-get --help
+
+    - name: Test git-autocommit
+      run: |
+        chmod +x src/git-autocommit
+        ./src/git-autocommit --version
+        ./src/git-autocommit --help
+
+    - name: Test git-branch-cleanup
+      run: |
+        chmod +x src/git-branch-cleanup
+        ./src/git-branch-cleanup --version
+        ./src/git-branch-cleanup --help
