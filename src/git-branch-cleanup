@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+set -euo pipefail  # Exit on error, undefined vars, and pipeline failures
+
+VERSION="1.0.0"
+
+show_usage() {
+    cat << EOF
+Usage: git branch-cleanup [OPTIONS]
+
+Clean up old feature branches that have already been merged into
+the main development branches, helping to keep your repository tidy.
+
+Options:
+    -h, --help      Show this help message
+    --version       Show version information
+
+Note: Will not delete protected branches (master, main, develop, dev)
+EOF
+}
+
+show_version() {
+    echo "git branch-cleanup version $VERSION"
+}
+
+is_git_repository() {
+    if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        echo "fatal: not a git repository" >&2
+        return 1
+    fi
+    return 0
+}
+
+fetch_and_prune() {
+    echo "Fetching and pruning remote branches..."
+    if ! git fetch --all --prune; then
+        echo "Error fetching and pruning branches" >&2
+        return 1
+    fi
+    return 0
+}
+
+clean_merged_branches() {
+    echo "Cleaning up merged branches..."
+    local merged_branches
+    merged_branches=$(git branch --no-color --merged | \
+        command grep -vE "^(\*|\s*(master|main|develop|dev)\s*$)" || true)
+    
+    if [ -z "$merged_branches" ]; then
+        echo "No merged branches to clean up"
+        return 0
+    fi
+
+    local branch
+    while read -r branch; do
+        branch=$(echo "$branch" | tr -d '[:space:]')
+        if [ -n "$branch" ]; then
+            if ! git branch -d "$branch"; then
+                echo "Error deleting branch: $branch" >&2
+                return 1
+            fi
+            echo "Deleted branch: $branch"
+        fi
+    done <<< "$merged_branches"
+
+    echo "Successfully cleaned up merged branches"
+    return 0
+}
+
+main() {
+    if [ "${1:-}" = "--version" ]; then
+        show_version
+        exit 0
+    fi
+
+    if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+        show_usage
+        exit 0
+    fi
+
+    if ! is_git_repository; then
+        exit 1
+    fi
+
+    if ! fetch_and_prune; then
+        exit 1
+    fi
+
+    if ! clean_merged_branches; then
+        exit 1
+    fi
+}
+
+# Only run main if the script is being executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
